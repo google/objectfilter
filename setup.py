@@ -16,7 +16,7 @@
 from setuptools import setup
 
 setup(name="objectfilter",
-      version="0.1.0",
+      version="0.1.1",
       description="A library to implement object filters.",
       author="Jordi Sanchez",
       author_email="objectfilter.feedback@gmail.com",

@@ -519,6 +519,23 @@ AND @exported_symbols(name is 'inject')
 """
     self.assertQueryParses(query)
 
+    self.assertQueryParses("a is ['blue', 'dot']")
+    self.assertQueryParses("a is ['blue', 1]")
+    self.assertQueryParses("a is [1]")
+    # This is an empty list
+    self.assertQueryParses("a is []")
+    # While weird, the current parser allows this. Same as an empty list
+    self.assertQueryParses("a is [,,]")
+    # Unifinished expressions shouldn't parse
+    self.assertParseRaises("a is [")
+    self.assertParseRaises("a is [,,")
+    self.assertParseRaises("a is [,']")
+    # Malformed expressions shouldn't parse
+    self.assertParseRaises("a is [[]")
+    self.assertParseRaises("a is []]")
+    # We do not support nested lists at the moment
+    self.assertParseRaises("a is ['cannot', ['nest', 'lists']]")
+
   def assertObjectMatches(self, obj, query, match_is=True):
     parser = self.ParseQuery(query)
     filter_ = parser.Compile(self.filter_imp)
@@ -568,3 +585,22 @@ AND name is "yay.exe"
 AND size is 10
 """
     self.assertObjectMatches(self.file, query, match_is=False)
+
+    obj = DummyObject("list", [1,2])
+    self.assertObjectMatches(obj, "list is [1,2]")
+    self.assertObjectMatches(obj, "list is [5,6]", match_is=False)
+    self.assertObjectMatches(obj, "list isnot [1,3]")
+    self.assertObjectMatches(obj, "list inset [1,2,3]")
+    obj = DummyObject("list", [])
+    self.assertObjectMatches(obj, "list is []")
+    self.assertObjectMatches(obj, "list inset []")
+    # An empty set [] is a subset of any set. Hence this is False.
+    self.assertObjectMatches(obj, "list notinset [2]", match_is=False)
+    obj = DummyObject("single_element", 1)
+    self.assertObjectMatches(obj, "single_element inset [1,2,3]")
+    # 1 != [1]
+    self.assertObjectMatches(obj, "single_element isnot [1]")
+    obj = DummyObject("os", "windows")
+    self.assertObjectMatches(obj, 'os inset ["windows", "mac"]')
+    # "a" != ["a"]
+    self.assertObjectMatches(obj, 'os isnot ["windows"]')

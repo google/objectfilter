@@ -327,12 +327,13 @@ class InSet(GenericBinaryOperator):
   """Whether all values are contained within the right operand."""
 
   def Operation(self, x, y):
-    """Whether x is fully contained in y."""
+    """Whether x is a subset of y."""
     if x in y:
       return True
 
     # x might be an iterable
-    # first we need to skip strings or we'll do silly things
+    # first we need to skip strings or we'll do silly things like matching a
+    # string to a list.
     if (isinstance(x, basestring)
         or isinstance(x, bytes)):
       return False
@@ -343,7 +344,8 @@ class InSet(GenericBinaryOperator):
           return False
       return True
     except TypeError:
-      return False
+      pass
+    return False
 
 
 class NotInSet(GenericBinaryOperator):
@@ -371,7 +373,8 @@ class Regexp(GenericBinaryOperator):
       if self.compiled_re.search(utils.SmartUnicode(x)):
         return True
     except TypeError:
-      return False
+      pass
+    return False
 
 
 class Context(Operator):
@@ -663,7 +666,18 @@ class Parser(lexer.SearchParser):
 
       # Basic expression
       lexer.Token("ATTRIBUTE", r"[\w._0-9]+", "StoreAttribute", "OPERATOR"),
-      lexer.Token("OPERATOR", r"(\w+|[<>!=]=?)", "StoreOperator", "ARG"),
+      lexer.Token("OPERATOR", r"(\w+|[<>!=]=?)", "StoreOperator", "ARGORLIST"),
+
+      lexer.Token("ARGORLIST", r"\[", "ListStart", "LISTARG"),
+      lexer.Token("ARGORLIST", r"[^\s\[]", "PushBack", "ARG"),
+      lexer.Token("LISTARG", r"\]", "ListFinish", "ANDOR"),
+      lexer.Token("LISTARG", r",", "", "LISTARG"),
+      lexer.Token("LISTARG", r"(\d+\.\d+)", "InsertFloatArg", ""),
+      lexer.Token("LISTARG", r"(0x\d+)", "InsertInt16Arg", ""),
+      lexer.Token("LISTARG", r"(\d+)", "InsertIntArg", ""),
+      lexer.Token("LISTARG", "\"", "PushState,StringStart", "STRING"),
+      lexer.Token("LISTARG", "'", "PushState,StringStart", "SQ_STRING"),
+
       lexer.Token("ARG", r"(\d+\.\d+)", "InsertFloatArg", "ANDOR"),
       lexer.Token("ARG", r"(0x\d+)", "InsertInt16Arg", "ANDOR"),
       lexer.Token("ARG", r"(\d+)", "InsertIntArg", "ANDOR"),
@@ -680,12 +694,23 @@ class Parser(lexer.SearchParser):
       lexer.Token(".", r"\s+", None, None),
       ]
 
+  def ListStart(self, string="", **_):
+    """Sets the argument to be a list."""
+    self.current_expression.AddArg([])
+
+  def ListFinish(self, string="", **_):
+    """Adds the current expression to the stack. """
+    self.stack.append(self.current_expression)
+    self.current_expression = self.expression_cls()
+
   def InsertArg(self, string="", **_):
     """Insert an arg to the current expression."""
     logging.debug("Storing Argument %s", string)
 
+    if self.state == "LISTARG":
+      self.current_expression.args[0].append(string)
     # This expression is complete
-    if self.current_expression.AddArg(string):
+    elif self.current_expression.AddArg(string):
       self.stack.append(self.current_expression)
       self.current_expression = self.expression_cls()
       # We go to the ANDOR state, to find if there's an AND or OR operator
@@ -718,8 +743,7 @@ class Parser(lexer.SearchParser):
   def StringFinish(self, **_):
     if self.state == "ATTRIBUTE":
       return self.StoreAttribute(string=self.string)
-
-    elif self.state == "ARG":
+    elif self.state == "ARG" or self.state == "LISTARG":
       return self.InsertArg(string=self.string)
 
   def StringEscape(self, string, match, **_):
