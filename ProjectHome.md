@@ -1,0 +1,1 @@
+objectfilter allows filtering and matching python objects against user-supplied filter strings. The filter system is extensible so you can provide your own operators or change how objects are evaluated. Creating filters programmatically is also supported.
